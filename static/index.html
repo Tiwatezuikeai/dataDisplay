@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>GPU 资源使用看板</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #f5f7fa;
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .title-box {
+      width: 100%;
+      background: linear-gradient(135deg, #60a5fa, #93c5fd);
+      color: white;
+      padding: 18px 0;
+      border-radius: 14px;
+      box-shadow: 0 4px 16px rgba(96, 165, 250, 0.3);
+    }
+    .title-box h1 {
+      color: #fff;
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: 1px;
+    }
+
+    /* 控制行：日期 + 集群选择器在同一行 */
+    .controls-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      background: #ffffff;
+      padding: 16px 24px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .controls-row label {
+      font-size: 17px;
+      font-weight: 500;
+      color: #334155;
+    }
+    .date-picker {
+      font-size: 18px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      cursor: pointer;
+    }
+    .query-btn {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .query-btn:hover { background: #2563eb; }
+    .query-btn:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+    .cluster-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .cluster-selector select {
+      font-size: 18px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: white;
+      cursor: pointer;
+    }
+    .section-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 0;
+      margin: 16px 0;
+    }
+    .section-toggle button {
+      font-size: 16px;
+      font-weight: 600;
+      padding: 10px 32px;
+      border: 2px solid #3b82f6;
+      background: white;
+      color: #3b82f6;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .section-toggle button:first-child {
+      border-radius: 10px 0 0 10px;
+    }
+    .section-toggle button:last-child {
+      border-radius: 0 10px 10px 0;
+    }
+    .section-toggle button.active {
+      background: #3b82f6;
+      color: white;
+    }
+    .section-toggle button:hover:not(.active) {
+      background: #eff6ff;
+    }
+    .section-content {
+      display: none;
+    }
+    .section-content.active {
+      display: block;
+    }
+
+    .status-bar {
+      text-align: center;
+      margin: 10px 0;
+      min-height: 24px;
+    }
+    .loading { color: #3b82f6; }
+    .error { color: #dc2626; }
+
+    .section-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 20px 0 10px;
+    }
+
+    /* 柱状图容器：加宽 */
+    .quota-chart-box {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      padding: 20px;
+      margin: 0 auto 20px;
+      max-width: 100%; /* 占满宽度 */
+      width: 100%;
+    }
+    .quota-chart-inner {
+      width: 100%;
+      height: 500px; /* 增加高度 */
+    }
+
+    .pie-chart-row {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .pie-chart-box {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      padding: 20px;
+      flex: 1 1 0;
+      min-width: 300px;
+      max-width: 600px;
+    }
+    .pie-chart-inner {
+      width: 100%;
+      height: 400px;
+    }
+    .pie-chart-label {
+      text-align: center;
+      color: #1e40af;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+    .cluster-total {
+      text-align: center;
+      color: #475569;
+      margin-bottom: 10px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    /* 表格通用样式 */
+    .table-section {
+      text-align: center;
+      margin-top: 20px;
+    }
+    .table-toggle {
+      background: #64748b;
+      color: white;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 15px;
+    }
+    .table-toggle:hover { background: #475569; }
+    .table-container {
+      display: none;
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    .table-container.show { display: block; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      min-width: 800px;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #e2e8f0;
+      padding: 8px 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #334155;
+    }
+    tr:hover { background: #f8fafc; }
+    .no-data {
+      text-align: center;
+      color: #64748b;
+      padding: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title-box">
+      <h1>📊 GPU 资源使用看板（按集群）</h1>
+    </div>
+  </div>
+
+  <!-- 同一行：集群 + 日期 + 查询按钮 -->
+  <div class="controls-row">
+    <div class="cluster-selector">
+      <label for="clusterSelect">选择集群：</label>
+      <select id="clusterSelect" onchange="onClusterChange()">
+        <option value="">-- 加载中 --</option>
+      </select>
+    </div>
+    <input type="date" id="dateInput" class="date-picker">
+    <button class="query-btn" id="queryBtn" onclick="loadData()">查询</button>
+  </div>
+
+  <!-- 切换负载/配额 -->
+  <div class="section-toggle">
+    <button id="toggleUsage" class="active" onclick="switchSection('usage')">负载分布</button>
+    <button id="toggleQuota" onclick="switchSection('quota')">配额详情</button>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <!-- 负载分布饼图区域 -->
+  <div class="section-content active" id="sectionUsage">
+    <div class="section-title">📊 负载类型分布</div>
+    <div class="quota-chart-box">
+      <div class="pie-chart-row">
+        <div class="pie-chart-box">
+          <div class="pie-chart-label">按负载类型</div>
+          <div class="cluster-total" id="clusterTotal"></div>
+          <div class="pie-chart-inner" id="pieChart"></div>
+        </div>
+        <div class="pie-chart-box">
+          <div class="pie-chart-label">按资源池</div>
+          <div class="cluster-total" id="poolTotal"></div>
+          <div class="pie-chart-inner" id="poolPieChart"></div>
+        </div>
+      </div>
+      <!-- 饼图对应的表格 -->
+      <div class="table-section">
+        <button class="table-toggle" id="usageTableToggleBtn" onclick="toggleUsageTable()" style="display:none;">
+          展开使用明细
+        </button>
+        <div class="table-container" id="usageTableContainer">
+          <table id="usageTable">
+            <thead>
+              <tr>
+                <th>集群</th><th>团队</th><th>资源池</th><th>GPU 型号</th><th>负载类型</th><th>GPU·天</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 配额柱状图区域 -->
+  <div class="section-content" id="sectionQuota">
+    <div class="section-title">📈 配额使用详情（按资源池）</div>
+    <div class="quota-chart-box">
+      <div style="text-align:center; margin-bottom:12px;">
+        <label for="teamSelect" style="font-size:16px; font-weight:500; color:#334155; margin-right:8px;">选择团队：</label>
+        <select id="teamSelect" onchange="onTeamChange()" style="font-size:16px; padding:6px 12px; border-radius:8px; border:1px solid #cbd5e1; background:white; cursor:pointer;">
+          <option value="">全部团队</option>
+        </select>
+      </div>
+      <div class="cluster-total" id="quotaTotal" style="margin-bottom:6px;"></div>
+      <div class="quota-chart-inner" id="quotaBarChart"></div>
+      <!-- 柱状图对应的表格 -->
+      <div class="table-section">
+        <button class="table-toggle" id="quotaTableToggleBtn" onclick="toggleQuotaTable()" style="display:none;">
+          展开配额明细
+        </button>
+        <div class="table-container" id="quotaTableContainer">
+          <table id="quotaTable">
+            <thead>
+              <tr>
+                <th>集群</th><th>团队</th><th>资源池</th><th>已消耗 GPU·天</th><th>GPU 配额·天</th><th>算力消耗 GPU·天</th><th>配额使用率(%)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const colorMap = {
+      '训练': '#5470c6',
+      '推理': '#91cc75',
+      '通用服务': '#fac858',
+      '开发环境': '#ee6666',
+      '其他': '#73c0de'
+    };
+    let quotaBarChart = null;
+    let pieChart = null;
+    let poolPieChart = null;
+    let allUsageData = [];
+    let allQuotaData = [];
+    let currentCluster = '';
+    let currentTeam = '';
+    const dataCache = new Map();
+
+    function switchSection(section) {
+      document.getElementById('sectionUsage').classList.toggle('active', section === 'usage');
+      document.getElementById('sectionQuota').classList.toggle('active', section === 'quota');
+      document.getElementById('toggleUsage').classList.toggle('active', section === 'usage');
+      document.getElementById('toggleQuota').classList.toggle('active', section === 'quota');
+      // 切换后重绘对应图表
+      setTimeout(() => {
+        if (section === 'usage') {
+          if (pieChart && !pieChart.isDisposed()) pieChart.resize();
+          if (poolPieChart && !poolPieChart.isDisposed()) poolPieChart.resize();
+        }
+        if (section === 'quota' && quotaBarChart && !quotaBarChart.isDisposed()) quotaBarChart.resize();
+      }, 100);
+    }
+
+    window.addEventListener('resize', () => {
+      if (quotaBarChart && !quotaBarChart.isDisposed()) quotaBarChart.resize();
+      if (pieChart && !pieChart.isDisposed()) pieChart.resize();
+      if (poolPieChart && !poolPieChart.isDisposed()) poolPieChart.resize();
+    });
+
+    function destroyAllCharts() {
+      if (quotaBarChart && !quotaBarChart.isDisposed()) {
+        quotaBarChart.dispose();
+        quotaBarChart = null;
+      }
+      if (pieChart && !pieChart.isDisposed()) {
+        pieChart.dispose();
+        pieChart = null;
+      }
+      if (poolPieChart && !poolPieChart.isDisposed()) {
+        poolPieChart.dispose();
+        poolPieChart = null;
+      }
+    }
+
+    function setStatus(msg, isError = false) {
+      const bar = document.getElementById('statusBar');
+      bar.innerHTML = msg;
+      bar.className = isError ? 'status-bar error' : 'status-bar loading';
+    }
+    function clearStatus() {
+      document.getElementById('statusBar').innerHTML = '';
+    }
+
+    function toggleQuotaTable() {
+      const container = document.getElementById('quotaTableContainer');
+      const btn = document.getElementById('quotaTableToggleBtn');
+      container.classList.toggle('show');
+      btn.textContent = container.classList.contains('show') ? '折叠配额明细' : '展开配额明细';
+    }
+
+    function toggleUsageTable() {
+      const container = document.getElementById('usageTableContainer');
+      const btn = document.getElementById('usageTableToggleBtn');
+      container.classList.toggle('show');
+      btn.textContent = container.classList.contains('show') ? '折叠使用明细' : '展开使用明细';
+    }
+
+    // 构建集群下拉选项
+    function populateClusterSelect() {
+      const clusterSet = new Set();
+      allUsageData.forEach(r => clusterSet.add(r.cluster));
+      allQuotaData.forEach(r => clusterSet.add(r.cluster));
+      const clusters = Array.from(clusterSet).sort();
+      const select = document.getElementById('clusterSelect');
+      select.innerHTML = '';
+      if (clusters.length === 0) {
+        select.innerHTML = '<option value="">无可用集群</option>';
+        return;
+      }
+      clusters.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+      });
+      currentCluster = clusters[0];
+      select.value = currentCluster;
+    }
+
+    function onClusterChange() {
+      const select = document.getElementById('clusterSelect');
+      currentCluster = select.value;
+      if (!currentCluster) return;
+      currentTeam = '';
+      document.getElementById('teamSelect').innerHTML = '<option value="">全部团队</option>';
+      populateTeamSelect();
+      renderFilteredCharts(currentCluster);
+    }
+
+    function populateTeamSelect() {
+      const teamSet = new Set();
+      allQuotaData.forEach(r => {
+        if (r.cluster === currentCluster) teamSet.add(r.team);
+      });
+      const teams = Array.from(teamSet).sort();
+      const select = document.getElementById('teamSelect');
+      select.innerHTML = '<option value="">全部团队</option>';
+      teams.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        select.appendChild(opt);
+      });
+    }
+
+    function onTeamChange() {
+      currentTeam = document.getElementById('teamSelect').value;
+      const filteredQuota = allQuotaData.filter(r => r.cluster === currentCluster && (!currentTeam || r.team === currentTeam));
+      renderQuotaBarChart(filteredQuota, currentCluster);
+      renderQuotaTable(filteredQuota);
+    }
+
+    function renderFilteredCharts(cluster) {
+      const filteredUsage = allUsageData.filter(r => r.cluster === cluster);
+      const filteredQuota = allQuotaData.filter(r => r.cluster === cluster && (!currentTeam || r.team === currentTeam));
+
+      renderPieChart(filteredUsage, cluster);
+      renderPoolPieChart(filteredUsage);
+      renderUsageTable(filteredUsage);
+      renderQuotaBarChart(filteredQuota, cluster);
+      renderQuotaTable(filteredQuota);
+    }
+
+    // ---------- 配额柱状图 ----------
+    function renderQuotaBarChart(quotaRows, cluster) {
+      const dom = document.getElementById('quotaBarChart');
+      if (!dom) return;
+
+      if (quotaBarChart && !quotaBarChart.isDisposed()) {
+        quotaBarChart.dispose();
+      }
+      quotaBarChart = echarts.init(dom);
+
+      if (!quotaRows || quotaRows.length === 0) {
+        document.getElementById('quotaTotal').innerHTML = '';
+        quotaBarChart.setOption({
+          title: { text: '该集群暂无配额数据', left: 'center', top: 'center', textStyle: { color: '#999' } }
+        });
+        return;
+      }
+
+      const pools = [];
+      const consumed = [];
+      const quota = [];
+      const compute = [];
+      const usagePct = [];
+
+      let totalConsumed = 0;
+      let totalQuota = 0;
+      quotaRows.forEach(row => {
+        const label = row.team + ' / ' + row.pool_name;
+        pools.push(label);
+        const c = Number(row.gpu_days_consumed) || 0;
+        const q = Number(row.gpu_quota_days) || 0;
+        consumed.push(c);
+        quota.push(q);
+        compute.push(Number(row.gpu_days_compute) || 0);
+        const pctValue = Number(row.quota_usage_pct);
+        usagePct.push(isNaN(pctValue) ? 0 : pctValue);
+        totalConsumed += c;
+        totalQuota += q;
+      });
+      document.getElementById('quotaTotal').innerHTML = `总消耗 GPU·天：${totalConsumed.toFixed(2)}　|　总配额 GPU·天：${totalQuota.toFixed(2)}`;
+
+      const option = {
+        title: {
+          text: `集群：${cluster}`,
+          left: 'center',
+          textStyle: { fontSize: 14, color: '#334155' }
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: function(params) {
+            let tip = `<strong>${params[0].name}</strong><br/>`;
+            params.forEach(p => {
+              tip += `${p.marker} ${p.seriesName}: ${p.value} GPU·天<br/>`;
+            });
+            const idx = params[0].dataIndex;
+            tip += `📊 配额使用率: ${usagePct[idx].toFixed(1)}%`;
+            return tip;
+          }
+        },
+        legend: {
+          data: ['已消耗GPU·天', 'GPU配额·天', '算力消耗GPU·天'],
+          top: 40
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '15%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: pools,
+          axisLabel: {
+            rotate: 30,
+            fontSize: 11,
+            interval: 0, // 显示所有标签
+            overflow: 'truncate',
+            width: 100
+          }
+        },
+        yAxis: {
+          type: 'value',
+          name: 'GPU·天',
+          nameTextStyle: { fontSize: 12 }
+        },
+        series: [
+          {
+            name: '已消耗GPU·天',
+            type: 'bar',
+            barMaxWidth: 60,
+            data: consumed,
+            itemStyle: { color: '#3b82f6' },
+            label: {
+              show: true,
+              position: 'top',
+              formatter: (p) => usagePct[p.dataIndex].toFixed(1) + '%',
+              fontSize: 10,
+              color: '#1e293b'
+            }
+          },
+          {
+            name: 'GPU配额·天',
+            type: 'bar',
+            barMaxWidth: 60,
+            data: quota,
+            itemStyle: { color: '#94a3b8' }
+          },
+          {
+            name: '算力消耗GPU·天',
+            type: 'bar',
+            barMaxWidth: 60,
+            data: compute,
+            itemStyle: { color: '#10b981' }
+          }
+        ]
+      };
+      quotaBarChart.setOption(option);
+    }
+
+    // ---------- 负载分布饼图 ----------
+    function renderPieChart(usageRows, cluster) {
+      const dom = document.getElementById('pieChart');
+      if (!dom) return;
+
+      if (pieChart && !pieChart.isDisposed()) {
+        pieChart.dispose();
+      }
+      pieChart = echarts.init(dom);
+
+      if (!usageRows || usageRows.length === 0) {
+        pieChart.setOption({
+          title: { text: '该集群暂无 GPU 使用记录', left: 'center', top: 'center', textStyle: { color: '#999' } }
+        });
+        document.getElementById('clusterTotal').innerHTML = '';
+        return;
+      }
+
+      const typeMap = new Map();
+      let total = 0;
+      usageRows.forEach(r => {
+        total += r.gpu_days;
+        const lt = r.load_type;
+        typeMap.set(lt, (typeMap.get(lt) || 0) + r.gpu_days);
+      });
+
+      document.getElementById('clusterTotal').innerHTML = `总 GPU·天：${total.toFixed(2)}`;
+
+      const typeOrder = ['训练', '推理', '通用服务', '开发环境', '其他'];
+      const pieData = typeOrder
+        .filter(t => typeMap.has(t))
+        .map(t => ({
+          name: t,
+          value: parseFloat(typeMap.get(t).toFixed(2)),
+          itemStyle: { color: colorMap[t] }
+        }));
+
+      pieChart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} GPU·天 ({d}%)' },
+        legend: { orient: 'vertical', right: 10, top: 50 },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          center: ['40%', '50%'],
+          label: { formatter: '{b}\n{d}%', fontSize: 11 },
+          emphasis: { label: { fontSize: 14, fontWeight: 'bold' } },
+          data: pieData
+        }]
+      });
+    }
+
+    // ---------- 资源池饼图 ----------
+    function renderPoolPieChart(usageRows) {
+      const dom = document.getElementById('poolPieChart');
+      if (!dom) return;
+
+      if (poolPieChart && !poolPieChart.isDisposed()) {
+        poolPieChart.dispose();
+      }
+      poolPieChart = echarts.init(dom);
+
+      if (!usageRows || usageRows.length === 0) {
+        document.getElementById('poolTotal').innerHTML = '';
+        poolPieChart.setOption({
+          title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#999' } }
+        });
+        return;
+      }
+
+      const poolMap = new Map();
+      let total = 0;
+      usageRows.forEach(r => {
+        total += r.gpu_days;
+        const key = r.pool_name || '未归类';
+        poolMap.set(key, (poolMap.get(key) || 0) + r.gpu_days);
+      });
+
+      document.getElementById('poolTotal').innerHTML = `总 GPU·天：${total.toFixed(2)}`;
+
+      const poolColors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc'];
+      const pieData = Array.from(poolMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value], i) => ({
+          name,
+          value: parseFloat(value.toFixed(2)),
+          itemStyle: { color: poolColors[i % poolColors.length] }
+        }));
+
+      // 长名称截断辅助
+      function truncate(str, max) { return str.length > max ? str.slice(0, max) + '…' : str; }
+
+      poolPieChart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} GPU·天 ({d}%)' },
+        legend: {
+          orient: 'vertical',
+          right: 10,
+          top: 20,
+          formatter: (name) => truncate(name, 18)
+        },
+        series: [{
+          type: 'pie',
+          radius: ['40%', '70%'],
+          center: ['40%', '50%'],
+          label: {
+            formatter: (p) => truncate(p.name, 10) + '\n' + p.percent.toFixed(1) + '%',
+            fontSize: 11
+          },
+          emphasis: { label: { fontSize: 14, fontWeight: 'bold' } },
+          data: pieData
+        }]
+      });
+    }
+
+    // ---------- 配额表格 ----------
+    function renderQuotaTable(quotaRows) {
+      const tbody = document.querySelector('#quotaTable tbody');
+      tbody.innerHTML = '';
+      const btn = document.getElementById('quotaTableToggleBtn');
+      if (!quotaRows || quotaRows.length === 0) {
+        btn.style.display = 'none';
+        return;
+      }
+      quotaRows.forEach(r => {
+        const tr = document.createElement('tr');
+        const pct = (r.quota_usage_pct !== null && r.quota_usage_pct !== undefined) ? Number(r.quota_usage_pct).toFixed(2) : '-';
+        tr.innerHTML = `<td>${r.cluster}</td><td>${r.team}</td><td>${r.pool_name}</td><td>${Number(r.gpu_days_consumed).toFixed(4)}</td><td>${Number(r.gpu_quota_days).toFixed(4)}</td><td>${Number(r.gpu_days_compute).toFixed(4)}</td><td>${pct}</td>`;
+        tbody.appendChild(tr);
+      });
+      btn.style.display = 'inline-block';
+      document.getElementById('quotaTableContainer').classList.remove('show');
+      btn.textContent = '展开配额明细';
+    }
+
+    // ---------- 使用表格（饼图原始数据） ----------
+    function renderUsageTable(usageRows) {
+      const tbody = document.querySelector('#usageTable tbody');
+      tbody.innerHTML = '';
+      const btn = document.getElementById('usageTableToggleBtn');
+      if (!usageRows || usageRows.length === 0) {
+        btn.style.display = 'none';
+        return;
+      }
+      usageRows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.cluster}</td><td>${r.team}</td><td>${r.pool_name}</td><td>${r.gpu_model_name}</td><td>${r.load_type}</td><td>${r.gpu_days.toFixed(5)}</td>`;
+        tbody.appendChild(tr);
+      });
+      btn.style.display = 'inline-block';
+      document.getElementById('usageTableContainer').classList.remove('show');
+      btn.textContent = '展开使用明细';
+    }
+
+    // ---------- 加载数据 ----------
+    async function loadData() {
+      const date = document.getElementById('dateInput').value;
+      const queryBtn = document.getElementById('queryBtn');
+      if (queryBtn.disabled) return;
+      queryBtn.disabled = true;
+
+      destroyAllCharts();
+      document.getElementById('clusterTotal').innerHTML = '';
+      document.getElementById('poolTotal').innerHTML = '';
+      document.getElementById('quotaTotal').innerHTML = '';
+      // 隐藏表格按钮
+      document.getElementById('usageTableToggleBtn').style.display = 'none';
+      document.getElementById('quotaTableToggleBtn').style.display = 'none';
+      document.getElementById('usageTableContainer').classList.remove('show');
+      document.getElementById('quotaTableContainer').classList.remove('show');
+      document.querySelector('#usageTable tbody').innerHTML = '';
+      document.querySelector('#quotaTable tbody').innerHTML = '';
+
+      document.getElementById('clusterSelect').innerHTML = '<option value="">加载中...</option>';
+      allUsageData = [];
+      allQuotaData = [];
+      currentCluster = '';
+
+      setStatus('正在加载数据...');
+      try {
+        // 检查缓存
+        if (dataCache.has(date)) {
+          const cached = dataCache.get(date);
+          allUsageData = cached.usageData;
+          allQuotaData = cached.quotaData;
+          setStatus(`使用缓存数据（${date}）`);
+        } else {
+          const [usageRes, quotaRes] = await Promise.all([
+            fetch(`/api/gpu-usage?date=${date}`),
+            fetch(`/api/gpu-quota?date=${date}`)
+          ]);
+
+          if (!usageRes.ok) throw new Error(`GPU usage API 错误: ${usageRes.status}`);
+          const usageJson = await usageRes.json();
+          if (usageJson.status !== 'ok') throw new Error(usageJson.detail || 'GPU usage 数据异常');
+          allUsageData = usageJson.data || [];
+
+          let quotaError = false;
+          try {
+            if (!quotaRes.ok) throw new Error(`Quota API 错误: ${quotaRes.status}`);
+            const quotaJson = await quotaRes.json();
+            if (quotaJson.status !== 'ok') throw new Error(quotaJson.detail || 'Quota 数据异常');
+            allQuotaData = quotaJson.data || [];
+          } catch (e) {
+            console.warn('配额数据加载失败:', e);
+            setStatus('配额数据加载失败，配额图表将不显示', true);
+            quotaError = true;
+          }
+
+          // 存入缓存
+          dataCache.set(date, { usageData: allUsageData, quotaData: allQuotaData });
+        }
+
+        populateClusterSelect();
+        currentTeam = '';
+        document.getElementById('teamSelect').innerHTML = '<option value="">全部团队</option>';
+        populateTeamSelect();
+        if (currentCluster) {
+          renderFilteredCharts(currentCluster);
+          clearStatus();
+        } else {
+          setStatus('暂无任何集群数据', true);
+        }
+      } catch (err) {
+        setStatus(`查询失败: ${err.message}`, true);
+      } finally {
+        queryBtn.disabled = false;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      document.getElementById('dateInput').value = yesterday.toISOString().slice(0, 10);
+      loadData();
+    });
+  </script>
+</body>
+</html>
