@@ -14,8 +14,6 @@ fastapi[standard] 已包含 uvicorn，无需额外安装。
 4. 配置远程数据库连接
 编辑项目根目录下的 main.py，修改 DORIS_CONFIG 字典为你实际的环境信息：
 
-doris服务器ip：10.155.2.229:9030
-
 DORIS_CONFIG = {
     "host": "localhost",             # 本地地址（使用远程端口转发获取信息）
     "port": 9030,                    # 端口（通常为 9030）
