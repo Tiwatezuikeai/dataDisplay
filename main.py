@@ -12,7 +12,7 @@ load_dotenv()
 
 # ========== 配置（从环境变量读取，避免硬编码）==========
 DORIS_CONFIG = {
-    "host": os.getenv("DORIS_HOST", "localhost"),
+    "host": os.getenv("DORIS_HOST", ""),
     "port": int(os.getenv("DORIS_PORT", "9030")),
     "user": os.getenv("DORIS_USER", "dw_ailab"),
     "password": os.getenv("DORIS_PASSWORD", ""),
